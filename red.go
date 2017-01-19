@@ -44,16 +44,17 @@ func (s *Server) Handle(name string, h HandlerFunc) {
 }
 
 // Server implements server speaking RESP (REdis Serialization Protocol). Server
-// automatically handles MULTI & EXEC commands for transactions, other commands
-// are expected to be implemented separately and registered with Handle method.
+// automatically handles MULTI & EXEC commands for transactions, QUIT for
+// client-initiated disconnect, other commands are expected to be implemented
+// separately and registered with Handle method.
 type Server struct {
 	log      Logger
 	handlers map[string]HandlerFunc
 }
 
 // HandleConn processes single client connection, automatically handling
-// transactions (MULTI/EXEC commands). It calls user-provided handlers for
-// registered commands.
+// following commands MULTI/EXEC (transactions), QUIT (client disconnect). It
+// calls user-provided handlers for registered commands.
 func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 	defer conn.Close()
 	rd := bufio.NewReader(conn)
@@ -77,6 +78,8 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 		cmd := strings.ToLower(req[0])
 		s.log.Println("REQ:", req)
 		switch cmd {
+		case "quit":
+			return nil
 		case "multi":
 			if len(req) != 1 {
 				if inTx {
