@@ -35,12 +35,18 @@ func (s *Server) WithLogger(l Logger) {
 	}
 }
 
-// Handle registers handler for command with given name
+// Handle registers handler for command with given name (case-insensitive)
 func (s *Server) Handle(name string, h HandlerFunc) {
+	if name == "" {
+		panic("Handle called with empty name")
+	}
+	if h == nil {
+		panic("Handle called with nil HandlerFunc")
+	}
 	if s.handlers == nil {
 		s.handlers = make(map[string]HandlerFunc)
 	}
-	s.handlers[name] = h
+	s.handlers[strings.ToLower(name)] = h
 }
 
 // Server implements server speaking RESP (REdis Serialization Protocol). Server
