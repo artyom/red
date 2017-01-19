@@ -82,7 +82,6 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 			return err
 		}
 		cmd := strings.ToLower(req[0])
-		s.log.Println("REQ:", req)
 		switch cmd {
 		case "quit":
 			return nil
