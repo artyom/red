@@ -100,7 +100,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				continue
 			}
 			inTx, errTx = true, false
-			err = resp.Encode(conn, resp.OK{})
+			err = resp.Encode(conn, resp.OK)
 			continue
 		case "exec":
 			if len(req) != 1 {
