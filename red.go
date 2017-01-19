@@ -203,8 +203,8 @@ func (noopLogger) Println(v ...interface{})               {}
 func errNoCmd(name string) resp.Error { return resp.Error("ERR unknown command '" + name + "'") }
 
 // ErrWrongArgs are expected to be returned by HandlerFunc implementations when
-// number of arguments are wrong. This error automatically to client with
-// command name annotated.
+// number of arguments are wrong. This error is automatically passed to client
+// with command name annotated.
 var ErrWrongArgs = errors.New("wrong number of arguments")
 
 func errWrongArgs(name string) resp.Error {
