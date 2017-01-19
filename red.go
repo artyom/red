@@ -3,6 +3,7 @@ package red
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -81,7 +82,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				if inTx {
 					errTx = true
 				}
-				err = resp.Encode(conn, ErrWrongArgs(cmd))
+				err = resp.Encode(conn, errWrongArgs(cmd))
 				continue
 			}
 			if inTx {
@@ -97,7 +98,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				if inTx {
 					errTx = true
 				}
-				err = resp.Encode(conn, ErrWrongArgs(cmd))
+				err = resp.Encode(conn, errWrongArgs(cmd))
 				continue
 			}
 			if !inTx {
@@ -126,7 +127,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				err = resp.Encode(conn, resp.SimpleString("QUEUED"))
 				continue
 			}
-			err = resp.Encode(conn, singleVal(h(Request{Name: cmd, Args: req[1:]})))
+			err = resp.Encode(conn, singleVal(h, Request{Name: cmd, Args: req[1:]}))
 			continue
 		}
 
@@ -137,7 +138,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				txReplies = append(txReplies, errNoCmd(r.Name))
 				continue
 			}
-			txReplies = append(txReplies, singleVal(h(r)))
+			txReplies = append(txReplies, singleVal(h, r))
 		}
 		inTx, errTx = false, false
 		tx = tx[:0]
@@ -192,16 +193,26 @@ func (noopLogger) Println(v ...interface{})               {}
 
 func errNoCmd(name string) resp.Error { return resp.Error("ERR unknown command '" + name + "'") }
 
-// ErrWrongArgs returns resp.Error saying that command has wrong number of
-// arguments
-func ErrWrongArgs(name string) resp.Error {
+// ErrWrongArgs are expected to be returned by HandlerFunc implementations when
+// number of arguments are wrong. This error automatically to client with
+// command name annotated.
+var ErrWrongArgs = errors.New("wrong number of arguments")
+
+func errWrongArgs(name string) resp.Error {
 	return resp.Error("ERR wrong number of arguments for '" + name + "' command")
 }
 
-// silgleVal returns v if err is nil, otherwise it returns resp.Error holding
-// err text. Intended to be used as a wrapper for HandlerFunc
-func singleVal(v interface{}, err error) interface{} {
+// silgleVal calls HandlerFunc h with given Request r and returns single value
+// that is expected to be passed to resp.Encode.
+//
+// If h returns a non-nil error, then singleVal returns resp.Error type,
+// otherwise it's an interface{} returned by h.
+func singleVal(h HandlerFunc, r Request) interface{} {
+	v, err := h(r)
 	if err != nil {
+		if err == ErrWrongArgs {
+			return errWrongArgs(r.Name)
+		}
 		text := err.Error()
 		if strings.ContainsAny(text, "\r\n") {
 			text = strings.Replace(text, "\r", " ", -1)
