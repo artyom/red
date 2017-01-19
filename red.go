@@ -202,7 +202,12 @@ func ErrWrongArgs(name string) resp.Error {
 // err text. Intended to be used as a wrapper for HandlerFunc
 func singleVal(v interface{}, err error) interface{} {
 	if err != nil {
-		return resp.Error("ERR " + err.Error())
+		text := err.Error()
+		if strings.ContainsAny(text, "\r\n") {
+			text = strings.Replace(text, "\r", " ", -1)
+			text = strings.Replace(text, "\n", " ", -1)
+		}
+		return resp.Error("ERR " + text)
 	}
 	return v
 }
