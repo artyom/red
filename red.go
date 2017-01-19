@@ -4,7 +4,9 @@ package red
 import (
 	"bufio"
 	"io"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/artyom/resp"
 )
@@ -129,6 +131,37 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 	}
 }
 
+// ListenAndServe listens on TCP network address addr and then calls Serve to
+// handle requests on incoming connections.
+func (s *Server) ListenAndServe(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(tcpKeepAliveListener{ln.(*net.TCPListener)})
+}
+
+// Serve accepts incoming connections on the Listener l, creating a new service
+// goroutine for each.
+func (s *Server) Serve(l net.Listener) error {
+	defer l.Close()
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return err
+		}
+		go func(c net.Conn) {
+			switch err := s.HandleConn(c); err {
+			case nil, io.EOF:
+			default:
+				if s.log != nil {
+					s.log.Println(err)
+				}
+			}
+		}(conn)
+	}
+}
+
 // Logger is a set of methods used to log information. *log.Logger implements
 // this interface.
 type Logger interface {
@@ -152,4 +185,22 @@ func singleVal(v interface{}, err error) interface{} {
 		return resp.Error("ERR " + err.Error())
 	}
 	return v
+}
+
+// tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
+// connections. It's used by ListenAndServe and ListenAndServeTLS so
+// dead TCP connections (e.g. closing laptop mid-download) eventually
+// go away.
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+	tc, err := ln.AcceptTCP()
+	if err != nil {
+		return
+	}
+	tc.SetKeepAlive(true)
+	tc.SetKeepAlivePeriod(3 * time.Minute)
+	return tc, nil
 }
