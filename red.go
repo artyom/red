@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/artyom/resp"
@@ -56,6 +57,7 @@ func (s *Server) Handle(name string, h HandlerFunc) {
 type Server struct {
 	log      Logger
 	handlers map[string]HandlerFunc
+	mu       sync.Mutex // used to serialize transactions
 }
 
 // HandleConn processes single client connection, automatically handling
@@ -140,6 +142,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 		}
 
 		txReplies := make(resp.Array, 0, len(tx))
+		s.mu.Lock()
 		for _, r := range tx {
 			h, ok := s.handlers[r.Name]
 			if !ok {
@@ -148,6 +151,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 			}
 			txReplies = append(txReplies, singleVal(h, r))
 		}
+		s.mu.Unlock()
 		inTx, errTx = false, false
 		tx = tx[:0]
 		err = resp.Encode(conn, txReplies)
