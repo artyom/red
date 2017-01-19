@@ -77,6 +77,13 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 		s.log.Println("REQ:", req)
 		switch cmd {
 		case "multi":
+			if len(req) != 1 {
+				if inTx {
+					errTx = true
+				}
+				err = resp.Encode(conn, ErrWrongArgs(cmd))
+				continue
+			}
 			if inTx {
 				errTx = true
 				err = resp.Encode(conn, resp.Error("ERR MULTI calls can not be nested"))
@@ -86,6 +93,13 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 			err = resp.Encode(conn, resp.OK{})
 			continue
 		case "exec":
+			if len(req) != 1 {
+				if inTx {
+					errTx = true
+				}
+				err = resp.Encode(conn, ErrWrongArgs(cmd))
+				continue
+			}
 			if !inTx {
 				err = resp.Encode(conn, resp.Error("ERR EXEC without MULTI"))
 				continue
@@ -177,6 +191,12 @@ func (noopLogger) Printf(format string, v ...interface{}) {}
 func (noopLogger) Println(v ...interface{})               {}
 
 func errNoCmd(name string) resp.Error { return resp.Error("ERR unknown command '" + name + "'") }
+
+// ErrWrongArgs returns resp.Error saying that command has wrong number of
+// arguments
+func ErrWrongArgs(name string) resp.Error {
+	return resp.Error("ERR wrong number of arguments for '" + name + "' command")
+}
 
 // silgleVal returns v if err is nil, otherwise it returns resp.Error holding
 // err text. Intended to be used as a wrapper for HandlerFunc
