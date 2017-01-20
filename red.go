@@ -4,8 +4,11 @@ package red
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -152,7 +155,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				err = resp.Encode(conn, resp.SimpleString("QUEUED"))
 				continue
 			}
-			err = resp.Encode(conn, singleVal(h, Request{Name: cmd, Args: req[1:]}))
+			err = resp.Encode(conn, runHandler(h, Request{Name: cmd, Args: req[1:]}))
 			continue
 		}
 
@@ -164,7 +167,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				txReplies = append(txReplies, errNoCmd(r.Name))
 				continue
 			}
-			txReplies = append(txReplies, singleVal(h, r))
+			txReplies = append(txReplies, runHandler(h, r))
 		}
 		s.mu.Unlock()
 		inTx, errTx = false, false
@@ -229,13 +232,26 @@ func errWrongArgs(name string) resp.Error {
 	return resp.Error("ERR wrong number of arguments for '" + name + "' command")
 }
 
-// silgleVal calls HandlerFunc h with given Request r and returns single value
+// runHandler calls HandlerFunc h with given Request r and returns single value
 // that is expected to be passed to resp.Encode.
 //
-// If h returns a non-nil error, then singleVal returns resp.Error type,
-// otherwise it's an interface{} returned by h.
-func singleVal(h HandlerFunc, r Request) interface{} {
-	v, err := h(r)
+// If h returns a non-nil error or panics, then runHandler returns resp.Error
+// type, otherwise it's an interface{} returned by h.
+func runHandler(h HandlerFunc, r Request) interface{} {
+	var panicked bool
+	v, err := func() (interface{}, error) {
+		defer func() {
+			if x := recover(); x != nil {
+				panicked = true
+				fmt.Fprintln(os.Stderr, "panic recovered:", x)
+				debug.PrintStack()
+			}
+		}()
+		return h(r)
+	}()
+	if panicked {
+		return resp.Error("ERR internal server error (panic)")
+	}
 	if err != nil {
 		if err == ErrWrongArgs {
 			return errWrongArgs(r.Name)
