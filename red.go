@@ -155,7 +155,9 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				err = resp.Encode(conn, resp.SimpleString("QUEUED"))
 				continue
 			}
+			s.mu.Lock()
 			err = resp.Encode(conn, runHandler(h, Request{Name: cmd, Args: req[1:]}))
+			s.mu.Unlock()
 			continue
 		}
 
