@@ -51,7 +51,7 @@ func (s *Server) Handle(name string, h HandlerFunc) {
 }
 
 // Server implements server speaking RESP (REdis Serialization Protocol). Server
-// automatically handles MULTI & EXEC commands for transactions, QUIT for
+// automatically handles MULTI, EXEC, DISCARD commands for transactions, QUIT for
 // client-initiated disconnect, other commands are expected to be implemented
 // separately and registered with Handle method.
 type Server struct {
@@ -61,7 +61,7 @@ type Server struct {
 }
 
 // HandleConn processes single client connection, automatically handling
-// following commands MULTI/EXEC (transactions), QUIT (client disconnect). It
+// following commands MULTI/EXEC/DISCARD (transactions), QUIT (client disconnect). It
 // calls user-provided handlers for registered commands.
 func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 	defer conn.Close()
@@ -87,6 +87,21 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 		switch cmd {
 		case "quit":
 			return nil
+		case "discard":
+			if len(req) != 1 {
+				if inTx {
+					errTx = true
+				}
+				err = resp.Encode(conn, errWrongArgs(cmd))
+				continue
+			}
+			if !inTx {
+				err = resp.Encode(conn, resp.Error("ERR DISCARD without MULTI"))
+				continue
+			}
+			inTx, errTx, tx = false, false, tx[:0]
+			err = resp.Encode(conn, resp.OK)
+			continue
 		case "multi":
 			if len(req) != 1 {
 				if inTx {
