@@ -39,6 +39,10 @@ func (s *Server) WithLogger(l Logger) {
 	}
 }
 
+// WithUnsafeTx disables command processing serialization that guarantees
+// redis-like transaction safety.
+func (s *Server) WithUnsafeTx() { s.unsafe = true }
+
 // Handle registers handler for command with given name (case-insensitive)
 func (s *Server) Handle(name string, h HandlerFunc) {
 	if name == "" {
@@ -61,6 +65,20 @@ type Server struct {
 	log      Logger
 	handlers map[string]HandlerFunc
 	mu       sync.Mutex // used to serialize transactions
+	unsafe   bool       // whether to skip transaction serialization
+}
+
+func (s *Server) txLock() {
+	if s.unsafe {
+		return
+	}
+	s.mu.Lock()
+}
+func (s *Server) txUnlock() {
+	if s.unsafe {
+		return
+	}
+	s.mu.Unlock()
 }
 
 // HandleConn processes single client connection, automatically handling
@@ -155,14 +173,14 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				err = resp.Encode(conn, resp.SimpleString("QUEUED"))
 				continue
 			}
-			s.mu.Lock()
+			s.txLock()
 			err = resp.Encode(conn, runHandler(h, Request{Name: cmd, Args: req[1:]}))
-			s.mu.Unlock()
+			s.txUnlock()
 			continue
 		}
 
 		txReplies := make(resp.Array, 0, len(tx))
-		s.mu.Lock()
+		s.txLock()
 		for _, r := range tx {
 			h, ok := s.handlers[r.Name]
 			if !ok {
@@ -171,7 +189,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 			}
 			txReplies = append(txReplies, runHandler(h, r))
 		}
-		s.mu.Unlock()
+		s.txUnlock()
 		inTx, errTx = false, false
 		tx = tx[:0]
 		err = resp.Encode(conn, txReplies)
