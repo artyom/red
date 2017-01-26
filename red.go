@@ -107,7 +107,7 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 		cmd := strings.ToLower(req[0])
 		switch cmd {
 		case "quit":
-			return nil
+			return resp.Encode(conn, resp.OK)
 		case "discard":
 			if len(req) != 1 {
 				if inTx {
