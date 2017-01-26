@@ -28,9 +28,7 @@ type Request struct {
 }
 
 // NewServer returns initialized server.
-func NewServer() *Server {
-	return &Server{log: noopLogger{}}
-}
+func NewServer() *Server { return new(Server) }
 
 // WithLogger configures server to use provided Logger.
 func (s *Server) WithLogger(l Logger) {
@@ -234,12 +232,6 @@ type Logger interface {
 	Printf(format string, v ...interface{})
 	Println(v ...interface{})
 }
-
-type noopLogger struct{}
-
-func (noopLogger) Print(v ...interface{})                 {}
-func (noopLogger) Printf(format string, v ...interface{}) {}
-func (noopLogger) Println(v ...interface{})               {}
 
 func errNoCmd(name string) resp.Error { return resp.Error("ERR unknown command '" + name + "'") }
 
