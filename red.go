@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/artyom/resp"
@@ -37,6 +38,10 @@ func (s *Server) WithLogger(l Logger) {
 	}
 }
 
+// WithCommands enables logging of incoming commands. Logging should be enabled
+// using WithLogger
+func (s *Server) WithCommands() { s.verbose = true }
+
 // WithUnsafeTx disables command processing serialization that guarantees
 // redis-like transaction safety.
 func (s *Server) WithUnsafeTx() { s.unsafe = true }
@@ -62,6 +67,8 @@ func (s *Server) Handle(name string, h HandlerFunc) {
 type Server struct {
 	log      Logger
 	handlers map[string]HandlerFunc
+	nextid   uint64
+	verbose  bool       // whether to log incoming commands
 	mu       sync.Mutex // used to serialize transactions
 	unsafe   bool       // whether to skip transaction serialization
 }
@@ -84,6 +91,7 @@ func (s *Server) txUnlock() {
 // calls user-provided handlers for registered commands.
 func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 	defer conn.Close()
+	connid := atomic.AddUint64(&s.nextid, 1)
 	rd := bufio.NewReader(conn)
 	var tx []Request
 	var inTx bool  // if we're inside transaction
@@ -101,6 +109,9 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 			continue
 		default:
 			return err
+		}
+		if s.log != nil && s.verbose {
+			s.log.Printf("conn:%d\t%v", connid, req)
 		}
 		cmd := strings.ToLower(req[0])
 		switch cmd {
