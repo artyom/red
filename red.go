@@ -46,18 +46,45 @@ func (s *Server) WithCommands() { s.verbose = true }
 // redis-like transaction safety.
 func (s *Server) WithUnsafeTx() { s.unsafe = true }
 
+// Stats returns statistics about the number of known command calls processed
+// since the previous Stats call.
+func (s *Server) Stats() []CmdCount {
+	out := make([]CmdCount, len(s.cmdCount))
+	for k, v := range s.handlers {
+		out[v.idx] = CmdCount{Name: k, Cnt: int(atomic.SwapUint64(&s.cmdCount[v.idx], 0))}
+	}
+	return out
+}
+
+// CmdCount describes the number of times a particular command was processed
+type CmdCount struct {
+	Name string
+	Cnt  int
+}
+
 // Handle registers handler for command with given name (case-insensitive)
 func (s *Server) Handle(name string, h HandlerFunc) {
 	if name == "" {
-		panic("Handle called with empty name")
+		panic("red: Handle called with an empty name")
 	}
 	if h == nil {
-		panic("Handle called with nil HandlerFunc")
+		panic("red: Handle called with nil HandlerFunc")
 	}
 	if s.handlers == nil {
-		s.handlers = make(map[string]HandlerFunc)
+		s.handlers = make(map[string]handler)
 	}
-	s.handlers[strings.ToLower(name)] = h
+	key := strings.ToLower(name)
+	if _, ok := s.handlers[key]; ok {
+		panic("red: HandlerFunc for command " + name + " is already set")
+	}
+	s.handlers[key] = handler{
+		idx: len(s.handlers),
+		fn:  h,
+	}
+	s.cmdCount = append(s.cmdCount, 0)
+	if len(s.cmdCount) != len(s.handlers) {
+		panic("red: Server.cmdCount length differs from Server.handlers length")
+	}
 }
 
 // Server implements server speaking RESP (REdis Serialization Protocol). Server
@@ -66,11 +93,17 @@ func (s *Server) Handle(name string, h HandlerFunc) {
 // separately and registered with Handle method.
 type Server struct {
 	log      Logger
-	handlers map[string]HandlerFunc
+	handlers map[string]handler
+	cmdCount []uint64
 	nextid   uint64
 	verbose  bool       // whether to log incoming commands
 	mu       sync.Mutex // used to serialize transactions
 	unsafe   bool       // whether to skip transaction serialization
+}
+
+type handler struct {
+	idx int // index into Server.cmdCount
+	fn  HandlerFunc
 }
 
 func (s *Server) txLock() {
@@ -182,8 +215,9 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				err = resp.Encode(conn, resp.SimpleString("QUEUED"))
 				continue
 			}
+			atomic.AddUint64(&s.cmdCount[h.idx], 1)
 			s.txLock()
-			err = resp.Encode(conn, runHandler(h, Request{Name: cmd, Args: req[1:]}))
+			err = resp.Encode(conn, runHandler(h.fn, Request{Name: cmd, Args: req[1:]}))
 			s.txUnlock()
 			continue
 		}
@@ -196,7 +230,8 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 				txReplies = append(txReplies, errNoCmd(r.Name))
 				continue
 			}
-			txReplies = append(txReplies, runHandler(h, r))
+			atomic.AddUint64(&s.cmdCount[h.idx], 1)
+			txReplies = append(txReplies, runHandler(h.fn, r))
 		}
 		s.txUnlock()
 		inTx, errTx = false, false
