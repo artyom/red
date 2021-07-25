@@ -134,7 +134,8 @@ func (s *Server) HandleConn(conn io.ReadWriteCloser) error {
 		if err != nil {
 			return err
 		}
-		req, err := resp.DecodeRequest(rd)
+		var req []string
+		req, err = resp.DecodeRequest(rd)
 		switch err {
 		case nil:
 		case resp.ErrInvalidRequest:
