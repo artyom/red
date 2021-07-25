@@ -1,4 +1,4 @@
-package red
+package red_test
 
 import (
 	"bytes"
@@ -6,11 +6,13 @@ import (
 	"io"
 	"net"
 	"os"
+
+	"github.com/artyom/red"
 )
 
 func Example() {
-	srv := NewServer()
-	srv.Handle("ping", func(req Request) (interface{}, error) {
+	srv := red.NewServer()
+	srv.Handle("ping", func(req red.Request) (interface{}, error) {
 		if len(req.Args) > 0 {
 			return req.Args[0], nil
 		}
